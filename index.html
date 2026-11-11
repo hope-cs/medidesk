@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediDesk Pro - Offline Clinic Management</title>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Local CSS Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- SheetJS (xlsx) for Excel Export & Import -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <!-- APP CONTAINER -->
+    <div class="app-layout">
+
+        <!-- SIDEBAR NAVIGATION SECTION -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-user-doctor"></i>
+                </div>
+                <div class="brand-info">
+                    <h2>MediDesk Pro</h2>
+                    <p>Offline Clinic Care</p>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button type="button" class="nav-btn active" id="nav-dashboard" onclick="switchTab('dashboard')">
+                    <i class="fa-solid fa-chart-line"></i> <span>Dashboard</span>
+                </button>
+                <button type="button" class="nav-btn" id="nav-add-patient" onclick="switchTab('add-patient')">
+                    <i class="fa-solid fa-user-plus"></i> <span>New Visit / Patient</span>
+                </button>
+                <button type="button" class="nav-btn" id="nav-patient-list" onclick="switchTab('patient-list')">
+                    <i class="fa-solid fa-users"></i> <span>Patient Records</span>
+                </button>
+                <button type="button" class="nav-btn" id="nav-excel-tools" onclick="switchTab('excel-tools')">
+                    <i class="fa-solid fa-file-excel"></i> <span>Excel Tools</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <span class="status-indicator"></span>
+                <span id="patient-count-badge" class="badge">0 Records</span>
+            </div>
+        </aside>
+
+        <!-- MAIN WORKSPACE -->
+        <main class="main-content">
+            
+            <!-- TOP HEADER -->
+            <header class="top-header">
+                <div>
+                    <h1 id="page-title">Dashboard</h1>
+                    <p id="page-subtitle">Overview of clinic checkups and quick operations</p>
+                </div>
+
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="global-search" placeholder="Search patient by name, ID, phone...">
+                </div>
+            </header>
+
+            <!-- TAB CONTENT CONTAINER -->
+            <div class="content-body">
+
+                <!-- SECTION 1: DASHBOARD TAB -->
+                <section id="tab-dashboard" class="tab-page active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div>
+                                <span class="stat-label">Total Patients</span>
+                                <h3 id="stat-total-patients" class="stat-val">0</h3>
+                            </div>
+                            <div class="stat-icon blue"><i class="fa-solid fa-hospital-user"></i></div>
+                        </div>
+                        <div class="stat-card">
+                            <div>
+                                <span class="stat-label">Checkups Today</span>
+                                <h3 id="stat-today-checkups" class="stat-val green">0</h3>
+                            </div>
+                            <div class="stat-icon green"><i class="fa-solid fa-calendar-day"></i></div>
+                        </div>
+                        <div class="stat-card">
+                            <div>
+                                <span class="stat-label">This Month</span>
+                                <h3 id="stat-month-checkups" class="stat-val purple">0</h3>
+                            </div>
+                            <div class="stat-icon purple"><i class="fa-solid fa-calendar-week"></i></div>
+                        </div>
+                        <div class="stat-card">
+                            <div>
+                                <span class="stat-label">Excel Sync</span>
+                                <h3 id="stat-excel-status" class="stat-val orange">Ready</h3>
+                            </div>
+                            <div class="stat-icon orange"><i class="fa-solid fa-file-excel"></i></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="card recent-card">
+                            <div class="card-header">
+                                <h3>Recent Patient Checkups</h3>
+                                <button type="button" class="text-btn" onclick="switchTab('patient-list')">View All →</button>
+                            </div>
+                            <div id="dashboard-recent-list" class="recent-list"></div>
+                        </div>
+
+                        <div class="card quick-actions-card">
+                            <h3>Quick Actions</h3>
+                            <button type="button" class="btn btn-primary full-width" onclick="switchTab('add-patient')">
+                                <i class="fa-solid fa-user-plus"></i> Register New Patient
+                            </button>
+                            <button type="button" class="btn btn-excel full-width" onclick="exportToExcel()">
+                                <i class="fa-solid fa-file-excel"></i> <span id="quick-excel-text">Export / Update Excel Sheet</span>
+                            </button>
+                            <div class="info-box">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>Clicking Excel export will download a sheet first, and then update the current sheet on later clicks.</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION 2: ADD/EDIT PATIENT FORM TAB -->
+                <section id="tab-add-patient" class="tab-page">
+                    <form id="patient-form" class="card form-card">
+                        <input type="hidden" id="patient-id">
+
+                        <div class="form-header">
+                            <div>
+                                <h2 id="form-heading">New Patient Record</h2>
+                                <p>Fill in patient personal details, vitals, diagnosis, and prescription</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </button>
+                        </div>
+
+                        <!-- Personal Details -->
+                        <div class="form-section">
+                            <h4 class="section-title"><i class="fa-solid fa-user"></i> Personal Information</h4>
+                            <div class="form-grid cols-3">
+                                <div class="field">
+                                    <label for="p-name">Full Name *</label>
+                                    <input type="text" id="p-name" required placeholder="e.g. John Doe">
+                                </div>
+                                <div class="field">
+                                    <label for="p-age">Age *</label>
+                                    <input type="number" id="p-age" required min="0" max="130" placeholder="e.g. 35">
+                                </div>
+                                <div class="field">
+                                    <label for="p-gender">Gender *</label>
+                                    <select id="p-gender" required>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="p-phone">Phone Number *</label>
+                                    <input type="tel" id="p-phone" required placeholder="e.g. +1 555-0192">
+                                </div>
+                                <div class="field span-2">
+                                    <label for="p-address">Address *</label>
+                                    <input type="text" id="p-address" required placeholder="e.g. 123 Main St, City">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vitals -->
+                        <div class="form-section">
+                            <h4 class="section-title"><i class="fa-solid fa-heart-pulse"></i> Checkup & Vitals</h4>
+                            <div class="form-grid cols-4">
+                                <div class="field">
+                                    <label for="p-date">Checkup Date *</label>
+                                    <input type="date" id="p-date" required>
+                                </div>
+                                <div class="field">
+                                    <label for="p-bp">Blood Pressure</label>
+                                    <input type="text" id="p-bp" placeholder="e.g. 120/80">
+                                </div>
+                                <div class="field">
+                                    <label for="p-temp">Body Temp</label>
+                                    <input type="text" id="p-temp" placeholder="e.g. 98.6 F">
+                                </div>
+                                <div class="field">
+                                    <label for="p-weight">Weight</label>
+                                    <input type="text" id="p-weight" placeholder="e.g. 70 kg">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Medical Details -->
+                        <div class="form-section">
+                            <h4 class="section-title"><i class="fa-solid fa-stethoscope"></i> Diagnosis & Prescription</h4>
+                            <div class="form-grid cols-2">
+                                <div class="field">
+                                    <label for="p-disease">Disease / Diagnosis *</label>
+                                    <input type="text" id="p-disease" required placeholder="e.g. Acute Bronchitis">
+                                </div>
+                                <div class="field">
+                                    <label for="p-doctor">Attending Doctor</label>
+                                    <input type="text" id="p-doctor" placeholder="e.g. Dr. Sarah Smith">
+                                </div>
+                                <div class="field span-2">
+                                    <label for="p-prescription">Prescription / Medication Details *</label>
+                                    <textarea id="p-prescription" required rows="4" placeholder="1. Paracetamol 500mg - 1 tab 3x daily&#10;2. Amoxicillin 250mg - 1 cap twice daily"></textarea>
+                                </div>
+                                <div class="field span-2">
+                                    <label for="p-notes">Doctor Notes / Remarks</label>
+                                    <textarea id="p-notes" rows="2" placeholder="e.g. Rest for 3 days, drink warm fluids."></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="switchTab('patient-list')">Cancel</button>
+                            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Record</button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- SECTION 3: PATIENT LIST TAB -->
+                <section id="tab-patient-list" class="tab-page">
+                    <div class="filter-bar card">
+                        <div class="filter-inputs">
+                            <input type="text" id="filter-search" placeholder="Filter patients by keyword...">
+                            <input type="date" id="filter-date">
+                        </div>
+                        <div class="filter-buttons">
+                            <button type="button" class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                            <button type="button" class="btn btn-excel" onclick="exportToExcel()"><i class="fa-solid fa-file-excel"></i> <span id="table-excel-text">Export Table</span></button>
+                        </div>
+                    </div>
+
+                    <div class="card table-card">
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID / Date</th>
+                                        <th>Patient Info</th>
+                                        <th>Diagnosis</th>
+                                        <th>Prescription Brief</th>
+                                        <th>Doctor</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="patient-table-body"></tbody>
+                            </table>
+                        </div>
+                        <div id="table-empty-state" class="empty-state">
+                            <i class="fa-solid fa-folder-open"></i>
+                            <p>No patient records found.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION 4: EXCEL TOOLS TAB -->
+                <section id="tab-excel-tools" class="tab-page">
+                    <div class="tools-grid">
+                        <div class="card tool-card">
+                            <div class="tool-icon green"><i class="fa-solid fa-file-export"></i></div>
+                            <h3>Export / Sync Excel Records</h3>
+                            <p>Export all registered patient records to an `.xlsx` file offline or update your synced dataset.</p>
+                            <div class="action-row">
+                                <button type="button" class="btn btn-excel full-width" onclick="exportToExcel()">
+                                    <i class="fa-solid fa-download"></i> <span id="tools-excel-text">Download Excel File</span>
+                                </button>
+                                <button type="button" id="reset-excel-btn" class="btn btn-secondary hidden" onclick="resetExcelSession()">
+                                    Reset Sync
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card tool-card">
+                            <div class="tool-icon blue"><i class="fa-solid fa-file-import"></i></div>
+                            <h3>Import Excel File</h3>
+                            <p>Load existing patient details into local memory from an Excel file (.xlsx or .csv).</p>
+                            <label class="btn btn-primary full-width file-upload-label">
+                                <i class="fa-solid fa-upload"></i> Select Excel File
+                                <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" onchange="importFromExcel(event)" class="hidden-input">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="card danger-card">
+                        <div>
+                            <h4><i class="fa-solid fa-triangle-exclamation"></i> Clear All Local Records</h4>
+                            <p>This action permanently removes saved patients from this desktop device.</p>
+                        </div>
+                        <button type="button" class="btn btn-danger" onclick="clearAllData()">Purge Local Database</button>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- PATIENT MODAL / PRINT PRESCRIPTION -->
+    <div id="patient-modal" class="modal-backdrop hidden">
+        <div class="modal-box">
+            <div class="modal-header no-print">
+                <h3><i class="fa-solid fa-file-medical"></i> Medical Slip Preview</h3>
+                <button type="button" class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+
+            <div class="modal-body" id="printArea">
+                <div class="clinic-header">
+                    <h2>CARE CLINIC & MEDICAL CENTER</h2>
+                    <p>123 Healthcare Blvd • Phone: +1 800-555-0199</p>
+                </div>
+
+                <div class="modal-patient-info">
+                    <div><strong>Patient ID:</strong> <span id="m-id"></span></div>
+                    <div><strong>Checkup Date:</strong> <span id="m-date"></span></div>
+                    <div><strong>Name:</strong> <span id="m-name"></span></div>
+                    <div><strong>Age / Gender:</strong> <span id="m-age-gender"></span></div>
+                    <div><strong>Phone:</strong> <span id="m-phone"></span></div>
+                    <div><strong>Attending Doctor:</strong> <span id="m-doctor"></span></div>
+                    <div class="full-row"><strong>Address:</strong> <span id="m-address"></span></div>
+                </div>
+
+                <div class="modal-vitals">
+                    <span><strong>BP:</strong> <span id="m-bp">--</span></span>
+                    <span><strong>Temp:</strong> <span id="m-temp">--</span></span>
+                    <span><strong>Weight:</strong> <span id="m-weight">--</span></span>
+                </div>
+
+                <div class="modal-section">
+                    <h4>Diagnosis / Disease</h4>
+                    <div id="m-disease" class="box"></div>
+                </div>
+
+                <div class="modal-section">
+                    <h4><span class="rx">Rx</span> Prescription Details</h4>
+                    <div id="m-prescription" class="box prescription-box"></div>
+                </div>
+
+                <div id="m-notes-container" class="modal-section">
+                    <h4>Doctor Remarks</h4>
+                    <div id="m-notes" class="box italic"></div>
+                </div>
+
+                <div class="signature-line">
+                    <p>Generated via MediDesk Pro</p>
+                    <div class="sig-box">
+                        <p id="m-sign-doctor">Doctor Signature</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer no-print">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <div class="right-buttons">
+                    <button type="button" id="modal-edit-btn" class="btn btn-secondary">Edit Record</button>
+                    <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print"></i> Print Slip</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="toast">
+        <i id="toast-icon" class="fa-solid fa-circle-check"></i>
+        <span id="toast-message">Notification message</span>
+    </div>
+
+    <!-- APP JAVASCRIPT FILE -->
+    <script src="app.js"></script>
+</body>
+</html>

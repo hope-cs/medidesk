@@ -1,0 +1,549 @@
+// Data Keys & State Variables
+const STORAGE_KEY = 'medidesk_patients';
+const EXCEL_SYNC_KEY = 'medidesk_excel_synced';
+
+// SET YOUR DESIRED FOLDER PATH HERE (Use forward slashes '/')
+// Example: 'C:/Users/90ham/OneDrive/Desktop/MediDesk-Desktop' or 'C:/MediDeskData'
+const CUSTOM_EXPORT_FOLDER = 'C:/Users/90ham/OneDrive/Desktop/MediDesk-Desktop';
+const FIXED_EXCEL_FILENAME = 'Clinic_Patients_Database.xlsx';
+
+let patients = [];
+let hasExcelDownloaded = false;
+
+// Initialize Application on Page Load
+document.addEventListener('DOMContentLoaded', () => {
+    loadLocalData();
+    setupEventListeners();
+    updateDashboardStats();
+    renderRecentList();
+    renderPatientTable();
+    updateExcelUI();
+    
+    // Set default checkup date to today in form
+    const dateInput = document.getElementById('p-date');
+    if (dateInput) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+});
+
+// Load Stored Patients from LocalStorage
+function loadLocalData() {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        patients = stored ? JSON.parse(stored) : [];
+        hasExcelDownloaded = localStorage.getItem(EXCEL_SYNC_KEY) === 'true';
+    } catch (e) {
+        console.error("Failed to load local data", e);
+        patients = [];
+    }
+}
+
+// Save Patients to LocalStorage
+function saveLocalData() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+        updateDashboardStats();
+        renderRecentList();
+        renderPatientTable();
+        
+        const countBadge = document.getElementById('patient-count-badge');
+        if (countBadge) countBadge.textContent = `${patients.length} Records`;
+    } catch (e) {
+        console.error("Failed to save data", e);
+        showToast("Storage error! Failed to save record.");
+    }
+}
+
+// Event Listeners Setup
+function setupEventListeners() {
+    // Form Submit
+    const form = document.getElementById('patient-form');
+    if (form) {
+        form.addEventListener('submit', handleFormSubmit);
+    }
+
+    // Global & Table Search Filter
+    const globalSearch = document.getElementById('global-search');
+    if (globalSearch) {
+        globalSearch.addEventListener('input', (e) => {
+            switchTab('patient-list');
+            const filterInput = document.getElementById('filter-search');
+            if (filterInput) filterInput.value = e.target.value;
+            renderPatientTable(e.target.value);
+        });
+    }
+
+    const filterSearch = document.getElementById('filter-search');
+    if (filterSearch) {
+        filterSearch.addEventListener('input', (e) => {
+            const dateVal = document.getElementById('filter-date')?.value || '';
+            renderPatientTable(e.target.value, dateVal);
+        });
+    }
+
+    const filterDate = document.getElementById('filter-date');
+    if (filterDate) {
+        filterDate.addEventListener('change', (e) => {
+            const searchVal = document.getElementById('filter-search')?.value || '';
+            renderPatientTable(searchVal, e.target.value);
+        });
+    }
+}
+
+// Tab Switching Navigation Logic
+function switchTab(tabId) {
+    // Hide all pages
+    document.querySelectorAll('.tab-page').forEach(page => page.classList.remove('active'));
+    // Deactivate all nav buttons
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+
+    // Show selected page
+    const targetTab = document.getElementById(`tab-${tabId}`);
+    if (targetTab) targetTab.classList.add('active');
+
+    // Highlight nav button
+    const targetNav = document.getElementById(`nav-${tabId}`);
+    if (targetNav) targetNav.classList.add('active');
+
+    // Update Header Titles
+    const titleElem = document.getElementById('page-title');
+    const subElem = document.getElementById('page-subtitle');
+
+    if (tabId === 'dashboard') {
+        if (titleElem) titleElem.textContent = 'Dashboard';
+        if (subElem) subElem.textContent = 'Overview of clinic checkups and quick operations';
+    } else if (tabId === 'add-patient') {
+        if (titleElem) titleElem.textContent = 'New Visit / Patient Form';
+        if (subElem) subElem.textContent = 'Register a new patient checkup or update existing details';
+    } else if (tabId === 'patient-list') {
+        if (titleElem) titleElem.textContent = 'Patient Records';
+        if (subElem) subElem.textContent = 'Search, view details, print prescription slips, or manage patients';
+        renderPatientTable();
+    } else if (tabId === 'excel-tools') {
+        if (titleElem) titleElem.textContent = 'Excel Spreadsheet Tools';
+        if (subElem) subElem.textContent = 'Export patient database to Excel or import offline backup files';
+    }
+}
+
+// Form Reset
+function resetForm() {
+    const form = document.getElementById('patient-form');
+    if (form) form.reset();
+    
+    document.getElementById('patient-id').value = '';
+    document.getElementById('form-heading').textContent = 'New Patient Record';
+    document.getElementById('p-date').value = new Date().toISOString().split('T')[0];
+}
+
+// Handle Patient Record Form Submission
+function handleFormSubmit(e) {
+    e.preventDefault();
+
+    const idInput = document.getElementById('patient-id').value;
+    const isEdit = idInput !== '';
+
+    const newPatient = {
+        id: isEdit ? idInput : 'PAT-' + Date.now().toString().slice(-6),
+        name: document.getElementById('p-name').value.trim(),
+        age: document.getElementById('p-age').value.trim(),
+        gender: document.getElementById('p-gender').value,
+        phone: document.getElementById('p-phone').value.trim(),
+        address: document.getElementById('p-address').value.trim(),
+        date: document.getElementById('p-date').value,
+        bp: document.getElementById('p-bp').value.trim() || 'N/A',
+        temp: document.getElementById('p-temp').value.trim() || 'N/A',
+        weight: document.getElementById('p-weight').value.trim() || 'N/A',
+        disease: document.getElementById('p-disease').value.trim(),
+        doctor: document.getElementById('p-doctor').value.trim() || 'Attending Doctor',
+        prescription: document.getElementById('p-prescription').value.trim(),
+        notes: document.getElementById('p-notes').value.trim() || 'None'
+    };
+
+    if (isEdit) {
+        const index = patients.findIndex(p => p.id === idInput);
+        if (index !== -1) patients[index] = newPatient;
+        showToast("Patient record updated successfully!");
+    } else {
+        patients.unshift(newPatient);
+        showToast("New patient record saved!");
+    }
+
+    saveLocalData();
+    resetForm();
+    switchTab('patient-list');
+}
+
+// Dashboard Statistics Update
+function updateDashboardStats() {
+    const totalElem = document.getElementById('stat-total-patients');
+    if (totalElem) totalElem.textContent = patients.length;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayCount = patients.filter(p => p.date === todayStr).length;
+    const todayElem = document.getElementById('stat-today-checkups');
+    if (todayElem) todayElem.textContent = todayCount;
+
+    const currentMonthStr = todayStr.slice(0, 7);
+    const monthCount = patients.filter(p => p.date && p.date.startsWith(currentMonthStr)).length;
+    const monthElem = document.getElementById('stat-month-checkups');
+    if (monthElem) monthElem.textContent = monthCount;
+}
+
+// Render Recent Checkups in Dashboard
+function renderRecentList() {
+    const container = document.getElementById('dashboard-recent-list');
+    if (!container) return;
+
+    if (patients.length === 0) {
+        container.innerHTML = `<div class="empty-state"><p>No checkup records yet.</p></div>`;
+        return;
+    }
+
+    const recents = patients.slice(0, 5);
+    container.innerHTML = recents.map(p => `
+        <div class="recent-item">
+            <div class="recent-item-info">
+                <div class="avatar">${p.name.charAt(0).toUpperCase()}</div>
+                <div>
+                    <strong>${escapeHtml(p.name)}</strong> (${p.age} yrs, ${p.gender})
+                    <br><small style="color:#64748b">${p.date} • ${escapeHtml(p.disease)}</small>
+                </div>
+            </div>
+            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="viewPatient('${p.id}')">View</button>
+        </div>
+    `).join('');
+}
+
+// Render Patient Records Table
+function renderPatientTable(searchQuery = '', filterDateVal = '') {
+    const tbody = document.getElementById('patient-table-body');
+    const emptyState = document.getElementById('table-empty-state');
+    if (!tbody) return;
+
+    let filtered = patients;
+
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(p => 
+            p.name.toLowerCase().includes(q) ||
+            p.id.toLowerCase().includes(q) ||
+            p.phone.toLowerCase().includes(q) ||
+            p.disease.toLowerCase().includes(q)
+        );
+    }
+
+    if (filterDateVal) {
+        filtered = filtered.filter(p => p.date === filterDateVal);
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyState) emptyState.classList.add('hidden');
+
+    tbody.innerHTML = filtered.map(p => `
+        <tr>
+            <td>
+                <strong>${p.id}</strong><br>
+                <small style="color:#64748b">${p.date}</small>
+            </td>
+            <td>
+                <strong>${escapeHtml(p.name)}</strong> (${p.age}/${p.gender.charAt(0)})<br>
+                <small style="color:#64748b">${escapeHtml(p.phone)}</small>
+            </td>
+            <td><span class="badge" style="background:#e0f2fe; color:#0284c7;">${escapeHtml(p.disease)}</span></td>
+            <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(p.prescription)}</td>
+            <td>${escapeHtml(p.doctor)}</td>
+            <td class="text-center">
+                <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="viewPatient('${p.id}')" title="View & Print"><i class="fa-solid fa-eye"></i></button>
+                <button class="btn btn-primary" style="padding:4px 8px; font-size:0.75rem;" onclick="editPatient('${p.id}')" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem;" onclick="deletePatient('${p.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Clear Search Filters
+function clearFilters() {
+    const s = document.getElementById('filter-search');
+    const d = document.getElementById('filter-date');
+    const g = document.getElementById('global-search');
+    if (s) s.value = '';
+    if (d) d.value = '';
+    if (g) g.value = '';
+    renderPatientTable();
+}
+
+// View Patient Medical Slip / Prescription Modal
+function viewPatient(id) {
+    const p = patients.find(item => item.id === id);
+    if (!p) return;
+
+    document.getElementById('m-id').textContent = p.id;
+    document.getElementById('m-date').textContent = p.date;
+    document.getElementById('m-name').textContent = p.name;
+    document.getElementById('m-age-gender').textContent = `${p.age} Years / ${p.gender}`;
+    document.getElementById('m-phone').textContent = p.phone;
+    document.getElementById('m-doctor').textContent = p.doctor;
+    document.getElementById('m-address').textContent = p.address;
+    document.getElementById('m-bp').textContent = p.bp;
+    document.getElementById('m-temp').textContent = p.temp;
+    document.getElementById('m-weight').textContent = p.weight;
+    document.getElementById('m-disease').textContent = p.disease;
+    document.getElementById('m-prescription').textContent = p.prescription;
+    document.getElementById('m-notes').textContent = p.notes;
+    document.getElementById('m-sign-doctor').textContent = p.doctor || 'Attending Doctor';
+
+    const editBtn = document.getElementById('modal-edit-btn');
+    if (editBtn) {
+        editBtn.onclick = () => {
+            closeModal();
+            editPatient(p.id);
+        };
+    }
+
+    document.getElementById('patient-modal').classList.remove('hidden');
+}
+
+// Close Modal
+function closeModal() {
+    const modal = document.getElementById('patient-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// Edit Existing Patient Record
+function editPatient(id) {
+    const p = patients.find(item => item.id === id);
+    if (!p) return;
+
+    document.getElementById('patient-id').value = p.id;
+    document.getElementById('p-name').value = p.name;
+    document.getElementById('p-age').value = p.age;
+    document.getElementById('p-gender').value = p.gender;
+    document.getElementById('p-phone').value = p.phone;
+    document.getElementById('p-address').value = p.address;
+    document.getElementById('p-date').value = p.date;
+    document.getElementById('p-bp').value = p.bp === 'N/A' ? '' : p.bp;
+    document.getElementById('p-temp').value = p.temp === 'N/A' ? '' : p.temp;
+    document.getElementById('p-weight').value = p.weight === 'N/A' ? '' : p.weight;
+    document.getElementById('p-disease').value = p.disease;
+    document.getElementById('p-doctor').value = p.doctor;
+    document.getElementById('p-prescription').value = p.prescription;
+    document.getElementById('p-notes').value = p.notes === 'None' ? '' : p.notes;
+
+    document.getElementById('form-heading').textContent = `Edit Patient Record (${p.id})`;
+    switchTab('add-patient');
+}
+
+// Delete Patient Record
+function deletePatient(id) {
+    if (!window.confirm("Are you sure you want to delete this patient record?")) return;
+
+    patients = patients.filter(p => p.id !== id);
+    saveLocalData();
+    showToast("Record deleted.");
+}
+
+// Export / Update Excel Sheet (Direct Local In-Place Saving)
+function exportToExcel() {
+    if (!patients || patients.length === 0) {
+        showToast("No data to export. Please add at least one patient record.");
+        return;
+    }
+
+    try {
+        if (typeof XLSX === 'undefined') {
+            showToast("Excel library not loaded!");
+            return;
+        }
+
+        const exportData = patients.map(p => ({
+            "Patient ID": p.id || '',
+            "Checkup Date": p.date || '',
+            "Patient Name": p.name || '',
+            "Age": p.age || '',
+            "Gender": p.gender || '',
+            "Phone": p.phone || '',
+            "Address": p.address || '',
+            "Disease / Diagnosis": p.disease || '',
+            "Prescription": p.prescription || '',
+            "Blood Pressure": p.bp || '',
+            "Temperature": p.temp || '',
+            "Weight": p.weight || '',
+            "Doctor": p.doctor || '',
+            "Notes": p.notes || ''
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Patients");
+
+        // 1. ELECTRON NATIVE FILE SYSTEM WRITE (In-Place Update)
+        if (window.require) {
+            try {
+                const fs = window.require('fs');
+                const path = window.require('path');
+
+                // Target folder: Custom location if specified, otherwise app working folder
+                const targetFolder = (CUSTOM_EXPORT_FOLDER && CUSTOM_EXPORT_FOLDER.trim() !== '') 
+                    ? CUSTOM_EXPORT_FOLDER 
+                    : process.cwd();
+
+                // Ensure the folder exists
+                if (!fs.existsSync(targetFolder)) {
+                    fs.mkdirSync(targetFolder, { recursive: true });
+                }
+
+                const targetPath = path.join(targetFolder, FIXED_EXCEL_FILENAME);
+                const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+
+                // Write directly to file (overwrites existing file in-place, preventing duplicate downloads)
+                fs.writeFileSync(targetPath, excelBuffer);
+
+                hasExcelDownloaded = true;
+                localStorage.setItem(EXCEL_SYNC_KEY, 'true');
+                updateExcelUI();
+
+                showToast(`Excel updated at: ${FIXED_EXCEL_FILENAME}`);
+                return;
+            } catch (fsErr) {
+                console.error("FS Write Error:", fsErr);
+                showToast("File write failed: " + fsErr.message);
+                return;
+            }
+        }
+
+        // 2. BROWSER FALLBACK (If running outside Electron)
+        XLSX.writeFile(workbook, FIXED_EXCEL_FILENAME);
+        hasExcelDownloaded = true;
+        localStorage.setItem(EXCEL_SYNC_KEY, 'true');
+        updateExcelUI();
+        showToast("Excel sheet saved/updated!");
+
+    } catch (err) {
+        console.error("Export Error details:", err);
+        showToast("Export failed: " + (err.message || "Unknown error"));
+    }
+}
+
+// Import Excel File
+function importFromExcel(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+            if (jsonData.length === 0) {
+                showToast("Excel file is empty.");
+                return;
+            }
+
+            let importCount = 0;
+            jsonData.forEach(row => {
+                const id = row["Patient ID"] || 'PAT-' + Date.now().toString().slice(-6) + Math.floor(Math.random() * 10);
+                if (!patients.some(p => p.id === id)) {
+                    patients.unshift({
+                        id: id,
+                        date: row["Checkup Date"] || new Date().toISOString().split('T')[0],
+                        name: row["Patient Name"] || 'Unknown',
+                        age: row["Age"] || 'N/A',
+                        gender: row["Gender"] || 'Other',
+                        phone: row["Phone"] || 'N/A',
+                        address: row["Address"] || 'N/A',
+                        disease: row["Disease / Diagnosis"] || 'N/A',
+                        prescription: row["Prescription"] || 'None',
+                        bp: row["Blood Pressure"] || 'N/A',
+                        temp: row["Temperature"] || 'N/A',
+                        weight: row["Weight"] || 'N/A',
+                        doctor: row["Doctor"] || 'Attending Doctor',
+                        notes: row["Notes"] || 'None'
+                    });
+                    importCount++;
+                }
+            });
+
+            saveLocalData();
+            showToast(`Imported ${importCount} new patient records!`);
+            e.target.value = '';
+        } catch (err) {
+            console.error(err);
+            showToast("Failed to parse Excel file.");
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// Update Excel Action Labels in UI
+function updateExcelUI() {
+    const labelText = hasExcelDownloaded ? "Update Excel Sheet" : "Download Excel File";
+    const statusText = hasExcelDownloaded ? "Synced" : "Ready";
+
+    const quickBtn = document.getElementById('quick-excel-text');
+    const tableBtn = document.getElementById('table-excel-text');
+    const toolsBtn = document.getElementById('tools-excel-text');
+    const statusElem = document.getElementById('stat-excel-status');
+    const resetBtn = document.getElementById('reset-excel-btn');
+
+    if (quickBtn) quickBtn.textContent = hasExcelDownloaded ? "Update Excel Sheet" : "Export / Update Excel Sheet";
+    if (tableBtn) tableBtn.textContent = hasExcelDownloaded ? "Update Table in Excel" : "Export Table";
+    if (toolsBtn) toolsBtn.textContent = labelText;
+    if (statusElem) statusElem.textContent = statusText;
+    if (resetBtn) {
+        if (hasExcelDownloaded) resetBtn.classList.remove('hidden');
+        else resetBtn.classList.add('hidden');
+    }
+}
+
+// Reset Excel Sync State
+function resetExcelSession() {
+    hasExcelDownloaded = false;
+    localStorage.removeItem(EXCEL_SYNC_KEY);
+    updateExcelUI();
+    showToast("Excel download state reset.");
+}
+
+// Purge Database
+function clearAllData() {
+    if (!window.confirm("WARNING: Are you sure you want to delete ALL patient records from local storage? This cannot be undone.")) return;
+
+    patients = [];
+    hasExcelDownloaded = false;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(EXCEL_SYNC_KEY);
+    saveLocalData();
+    updateExcelUI();
+    showToast("All local patient records cleared.");
+}
+
+// Toast Notifications
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    const msgElem = document.getElementById('toast-message');
+    if (!toast || !msgElem) return;
+
+    msgElem.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
+// Utility HTML Escaping
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
